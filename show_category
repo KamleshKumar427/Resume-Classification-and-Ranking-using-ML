@@ -1,0 +1,106 @@
+import pickle
+import nltk
+import pandas as pd
+from pyresparser import ResumeParser
+from nltk.tokenize import word_tokenize
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+import os
+import warnings
+import json
+
+def parse_csv(filename):
+    try:
+        data = ResumeParser(filename).get_extracted_data()
+
+    except:
+        pass
+    return [data["skills"], data["degree"]]
+
+
+def compute_cosine_similarity(file1, resumeSkills):
+    text1 = pd.read_csv(file1)
+    text1 = text1['Skills'].tolist()
+    text1 = ' '.join(text1).lower()
+
+    resumeSkills = ' '.join(resumeSkills).lower()
+
+    vectorizer = TfidfVectorizer()
+    tfidf_matrix = vectorizer.fit_transform([text1, resumeSkills])
+    cosine_sim = cosine_similarity(tfidf_matrix[0], tfidf_matrix[1])[0][0]
+    return cosine_sim
+
+
+def calculate_degree_score(degree):
+    if degree is None:
+        return 0
+    
+    score = 0
+    if "bachelor" in degree.lower() or "bsc" in degree.lower():
+        score += 10
+    if "master" in degree.lower() or "graduate" in degree.lower() or "msc" in degree.lower():
+        score += 5
+
+    return score
+
+
+def ranking(file, user_input):
+
+    # file = '/home/kamleshk/Mypartition/Spring_2023/Jazz_internshop_cvs/c.pdf'
+    parsedCV = parse_csv(file)
+
+    skills = parsedCV[0]
+    degree = None
+
+    if len(parsedCV) > 1 and parsedCV[1] is not None:
+        degree = parsedCV[1][0]
+
+    file_name = user_input + '.csv'
+    skills_similarity = compute_cosine_similarity(file_name, skills)
+    degree_score = calculate_degree_score(degree)
+
+    final_score = skills_similarity*100 + degree_score
+    return final_score
+
+
+if __name__ == '__main__':
+
+
+    # Filter or ignore specific warning categories
+    warnings.filterwarnings("ignore", category=DeprecationWarning)
+    warnings.filterwarnings("ignore", category=UserWarning)
+    # Add more filters if needed
+
+
+
+    with open('categories_dict.pkl', 'rb') as file:
+        categories_dict = pickle.load(file)
+        print(f'Possible Categories of the Resumes: {categories_dict.keys()}')
+
+    user_input = input('Enter a category: ')
+
+    pdf_list = categories_dict[user_input]
+
+    directory_path = "INFORMATION-TECHNOLOGY"
+
+    scored_files = []
+
+    for file_name in pdf_list:
+        file_path = os.path.join(directory_path, file_name)
+        
+        if os.path.isfile(file_path):
+            score = ranking(file_path, user_input)
+            
+            if score is not None:
+                scored_files.append((file_name, score))
+            else:
+                print(f"Warning: No score returned for {file_path}")
+                continue
+
+        else:
+            print(f"{file_name} does not exist")
+
+    scored_files.sort(key=lambda x: x[1], reverse=True)
+
+    for i, (file_name, score) in enumerate(scored_files, 1):
+        print(f"Rank {i}: {file_name} with score {score}")
